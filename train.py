@@ -1,59 +1,78 @@
+import os
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
 from keras.models import Sequential
-from keras.layers import Dense, Dropout, Flatten
-from keras.layers import Conv2D
-from keras.layers import MaxPooling2D
+from keras.layers import (Conv2D, MaxPooling2D, Dropout, Flatten, Dense, BatchNormalization)
 from keras.optimizers import Adam
-from keras.preprocessing.image import ImageDataGenerator
+from keras.utils import to_categorical
+from keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
-train_dir = 'data/train'
-val_dir = 'data/test'
-train_datagen = ImageDataGenerator(rescale=1./255)
-val_datagen = ImageDataGenerator(rescale=1./255)
+# Path to CSV file
+csv_path = os.path.join(os.path.dirname(__file__), 'fer2013.csv')
 
-train_generator = train_datagen.flow_from_directory(
-    train_dir,
-    target_size = (48,48),
-    batch_size = 64,
-    color_mode = "grayscale",
-    class_mode = 'categorical'
+# Load dataset
+df = pd.read_csv(csv_path)
+
+# Convert pixel strings to 48x48 numpy arrays
+X = np.array([np.fromstring(pixels, sep=' ').reshape(48, 48, 1) for pixels in df['pixels']])
+X = X / 255.0  # Normalize
+
+# One-hot encode emotion labels
+y = to_categorical(df['emotion'], num_classes=7)
+
+# Train/validation split
+X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Define CNN model
+model = Sequential([
+    Conv2D(64, (3,3), activation='relu', input_shape=(48,48,1)),
+    BatchNormalization(),
+    Conv2D(64, (3,3), activation='relu'),
+    MaxPooling2D((2,2)),
+    Dropout(0.3),
+
+    Conv2D(128, (3,3), activation='relu'),
+    BatchNormalization(),
+    Conv2D(128, (3,3), activation='relu'),
+    MaxPooling2D((2,2)),
+    Dropout(0.3),
+
+    Conv2D(256, (3,3), activation='relu'),
+    BatchNormalization(),
+    Conv2D(256, (3,3), activation='relu'),
+    MaxPooling2D((2,2)),
+    Dropout(0.4),
+
+    Flatten(),
+    Dense(512, activation='relu'),
+    BatchNormalization(),
+    Dropout(0.5),
+    Dense(256, activation='relu'),
+    Dropout(0.5),
+    Dense(7, activation='softmax')
+])
+
+# Compile model
+model.compile(
+    optimizer=Adam(learning_rate=0.0005),
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
 )
 
-val_generator = val_datagen.flow_from_directory(
-    val_dir,
-    target_size = (48,48),
-    batch_size = 64,
-    color_mode = "grayscale",
-    class_mode = 'categorical'
+# Set callbacks
+early_stop = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+reduce_lr = ReduceLROnPlateau(monitor='val_loss', patience=3, factor=0.5, min_lr=1e-6)
+
+# Train model
+model.fit(
+    X_train, y_train,
+    validation_data=(X_val, y_val),
+    epochs=50,
+    batch_size=64,
+    callbacks=[early_stop, reduce_lr]
 )
 
-emotion_model = Sequential()
-
-emotion_model.add(Conv2D(32, kernel_size=(3,3), activation='relu', input_shape = (48,48,1)))
-emotion_model.add(Conv2D(64, kernel_size=(3,3), activation='relu'))
-emotion_model.add(MaxPooling2D(pool_size=(2,2)))
-emotion_model.add(Dropout(0.25))
-
-emotion_model.add(Conv2D(128, kernel_size=(3,3), activation='relu'))
-emotion_model.add(MaxPooling2D(pool_size=(2,2)))
-emotion_model.add(Conv2D(128, kernel_size=(3,3), activation='relu'))
-emotion_model.add(MaxPooling2D(pool_size=(2,2)))
-emotion_model.add(Dropout(0.25))
-
-emotion_model.add(Flatten())
-emotion_model.add(Dense(1024, activation='relu'))
-emotion_model.add(Dropout(0.5))
-emotion_model.add(Dense(7, activation='softmax'))
-
-emotion_model.compile(loss='categorical_crossentropy',optimizer=Adam(lr=0.0001, decay=1e-6),metrics=['accuracy'])
-
-emotion_model_info = emotion_model.fit_generator(
-    train_generator,
-    steps_per_epoch = 28709 // 64,
-    epochs=75,
-    validation_data = val_generator,
-    validation_steps = 7178 // 64
-)
-
-emotion_model.save_weights('model.h5')
-
-
+# Save model
+model.save(os.path.join(os.path.dirname(__file__), 'model.h5'))
+print("✅ Model saved as model.h5")
