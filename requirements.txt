@@ -1,1 +1,19 @@
+# Core Machine Learning Libraries
+tensorflow==2.14.0
+keras==2.14.0
+numpy==1.23.5
+pandas==1.5.3
+scikit-learn==1.2.2
 
+# Visualization and Debugging
+matplotlib==3.7.1
+
+# Web Application (Flask-based GUI)
+flask==2.2.5
+opencv-python==4.7.0.72
+
+# For face detection (Haar cascade XML)
+imutils==0.5.4
+
+# Optional: for interactive development
+jupyter==1.0.0
